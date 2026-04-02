@@ -1,0 +1,111 @@
+{
+  "ticket": "\nBug: Application crashes when user tries to upload a profile picture larger than 5MB\n\nDescription:\nUsers are reporting that the application crashes when they attempt to upload a profile picture \nthat",
+  "stages": {
+    "parsing": {
+      "type": "bug",
+      "title": "Application crashes on large profile picture upload",
+      "feature": "Upload profile picture functionality",
+      "intent": "Allow users to upload profile pictures without application crashes",
+      "components": [
+        "User Profile Module"
+      ],
+      "files_to_change": [
+        "UserProfileModule.js",
+        "ImageUploader.js",
+        "ErrorHandling.js"
+      ],
+      "acceptance_criteria": [
+        "Validate file size before upload (max 5MB)",
+        "Show user-friendly error message if file is too large",
+        "Support common image formats (JPG, PNG, GIF)",
+        "Compress images if possible without quality loss",
+        "Log upload attempts for monitoring"
+      ],
+      "validations": [
+        "Test file upload with sizes above and below 5MB",
+        "Verify error message is displayed for large files",
+        "Check image formats are supported and compressed correctly"
+      ],
+      "priority": "high",
+      "complexity": "medium",
+      "is_smallest_change": "Add file size validation before upload and handle large file errors",
+      "technical_notes": "Consider using image compression libraries to reduce file size without quality loss",
+      "extracted_keywords": {
+        "has_acceptance_criteria": true,
+        "has_technical_details": true,
+        "has_user_story": false,
+        "has_error_details": true,
+        "estimated_complexity": "low"
+      },
+      "original_ticket": "\nBug: Application crashes when user tries to upload a profile picture larger than 5MB\n\nDescription:\nUsers are reporting that the application crashes when they attempt to upload a profile picture \nthat exceeds 5MB in size. This is causing a poor user experience and preventing users from \nsetting their profile pictures.\n\nAcceptance Criteria:\n- Validate file size before upload (max 5MB)\n- Show user-friendly error message if file is too large\n- Support common image formats (JPG, PNG, GIF)\n- Compress"
+    },
+    "decision": {
+      "ticket_type": "bug",
+      "action": "fix",
+      "approach": "minimal_change",
+      "priority": {
+        "original": "high",
+        "adjusted": "critical",
+        "reason": "Adjusted due to bug classification"
+      },
+      "files_to_change": [
+        {
+          "file": "UserProfileModule.js",
+          "type": "unknown",
+          "action": "modify",
+          "confidence": "high"
+        },
+        {
+          "file": "ImageUploader.js",
+          "type": "unknown",
+          "action": "modify",
+          "confidence": "high"
+        },
+        {
+          "file": "ErrorHandling.js",
+          "type": "unknown",
+          "action": "modify",
+          "confidence": "high"
+        }
+      ],
+      "smallest_change": {
+        "scope": "minimal",
+        "files_affected": 1,
+        "lines_estimate": 50,
+        "approach": "minimal_change",
+        "recommendation": "Focus on the specific bug fix with minimal code changes. Add regression test."
+      },
+      "requires_tests": true,
+      "requires_rollback_plan": true,
+      "code_generation_strategy": {
+        "code_style": "focused",
+        "completeness": "complete",
+        "includes_comments": true,
+        "includes_tests": true,
+        "description": "Generate complete, focused fix with tests"
+      }
+    },
+    "generation": [
+      {
+        "filename": "src/modules/UserProfileModule.js",
+        "code": "```javascript\n// Bug Fix Template\n// Issue: Profile picture upload functionality crashes when uploading large files\n// Root Cause: Lack of file size validation before upload\n// Fix: Validate file size before upload and show user-friendly error message if file is too large\n\nimport React, { useState } from 'react';\nimport { Upload } from 'antd';\nimport ImageUploader from '../ImageUploader';\nimport { uploadProfilePicture } from '../api';\n\nconst UserProfileModule = () => {\n  const [file, setFile] = useState(null);\n  const [error, setError] = useState(null);\n\n  const handleFileChange = (info) => {\n    const file = info.file;\n    const fileSize = file.size / (1024 * 1024); // convert to MB\n\n    if (fileSize > 5) {\n      setError('File size exceeds the maximum limit of 5MB');\n      return;\n    }\n\n    setFile(file);\n  };\n\n  const handleUpload = () => {\n    if (!file) return;\n\n    const formData = new FormData();\n    formData.append('profilePicture', file);\n\n    uploadProfilePicture(formData)\n      .then((response) => {\n        console.log(response);\n      })\n      .catch((error) => {\n        console.error(error);\n      });\n  };\n\n  return (\n    <div>\n      <Upload\n        beforeUpload={handleFileChange}\n        onChange={handleFileChange}\n        maxCount={1}\n      >\n        <button>Upload Profile Picture</button>\n      </Upload>\n      {error && <div style={{ color: 'red' }}>{error}</div>}\n      <button onClick={handleUpload}>Save Changes</button>\n    </div>\n  );\n};\n\nexport default UserProfileModule;\n```\n\nfilename: src/modules/ImageUploader.js\ncode:\n```javascript\n// No changes needed in this file\n```\n\nfilename: src/api/index.js\ncode:\n```javascript\n// No changes needed in this file\n```\n\nfilename: src/tests/UserProfileModule.test.js\ncode:\n```javascript\nimport React from 'react';\nimport { render, fireEvent, waitFor } from '@testing-library/react';\nimport UserProfileModule from '../UserProfileModule';\n\ndescribe('UserProfileModule', () => {\n  it('should validate file size before upload', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['large file'], 'largefile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 10 * 1024 * 1024; // 10MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    await waitFor(() => {\n      expect(getByText('File size exceeds the maximum limit of 5MB')).toBeInTheDocument();\n    });\n  });\n\n  it('should upload profile picture successfully', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['small file'], 'smallfile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 1 * 1024 * 1024; // 1MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    const saveChangesButton = getByText('Save Changes');\n    fireEvent.click(saveChangesButton);\n\n    await waitFor(() => {\n      expect(console.log).toHaveBeenCalledTimes(1);\n    });\n  });\n});\n```\nNote: The above code is a minimal fix to validate file size before upload and show a user-friendly error message if the file is too large. The `ImageUploader` and `ErrorHandling` components are not modified as they are not directly related to the bug fix. The `UserProfileModule` component is updated to validate file size before upload, and a regression test is added to ensure the fix works as expected.",
+        "raw_response": "filename: src/modules/UserProfileModule.js\ncode:\n```javascript\n// Bug Fix Template\n// Issue: Profile picture upload functionality crashes when uploading large files\n// Root Cause: Lack of file size validation before upload\n// Fix: Validate file size before upload and show user-friendly error message if file is too large\n\nimport React, { useState } from 'react';\nimport { Upload } from 'antd';\nimport ImageUploader from '../ImageUploader';\nimport { uploadProfilePicture } from '../api';\n\nconst UserProfileModule = () => {\n  const [file, setFile] = useState(null);\n  const [error, setError] = useState(null);\n\n  const handleFileChange = (info) => {\n    const file = info.file;\n    const fileSize = file.size / (1024 * 1024); // convert to MB\n\n    if (fileSize > 5) {\n      setError('File size exceeds the maximum limit of 5MB');\n      return;\n    }\n\n    setFile(file);\n  };\n\n  const handleUpload = () => {\n    if (!file) return;\n\n    const formData = new FormData();\n    formData.append('profilePicture', file);\n\n    uploadProfilePicture(formData)\n      .then((response) => {\n        console.log(response);\n      })\n      .catch((error) => {\n        console.error(error);\n      });\n  };\n\n  return (\n    <div>\n      <Upload\n        beforeUpload={handleFileChange}\n        onChange={handleFileChange}\n        maxCount={1}\n      >\n        <button>Upload Profile Picture</button>\n      </Upload>\n      {error && <div style={{ color: 'red' }}>{error}</div>}\n      <button onClick={handleUpload}>Save Changes</button>\n    </div>\n  );\n};\n\nexport default UserProfileModule;\n```\n\nfilename: src/modules/ImageUploader.js\ncode:\n```javascript\n// No changes needed in this file\n```\n\nfilename: src/api/index.js\ncode:\n```javascript\n// No changes needed in this file\n```\n\nfilename: src/tests/UserProfileModule.test.js\ncode:\n```javascript\nimport React from 'react';\nimport { render, fireEvent, waitFor } from '@testing-library/react';\nimport UserProfileModule from '../UserProfileModule';\n\ndescribe('UserProfileModule', () => {\n  it('should validate file size before upload', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['large file'], 'largefile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 10 * 1024 * 1024; // 10MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    await waitFor(() => {\n      expect(getByText('File size exceeds the maximum limit of 5MB')).toBeInTheDocument();\n    });\n  });\n\n  it('should upload profile picture successfully', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['small file'], 'smallfile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 1 * 1024 * 1024; // 1MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    const saveChangesButton = getByText('Save Changes');\n    fireEvent.click(saveChangesButton);\n\n    await waitFor(() => {\n      expect(console.log).toHaveBeenCalledTimes(1);\n    });\n  });\n});\n```\nNote: The above code is a minimal fix to validate file size before upload and show a user-friendly error message if the file is too large. The `ImageUploader` and `ErrorHandling` components are not modified as they are not directly related to the bug fix. The `UserProfileModule` component is updated to validate file size before upload, and a regression test is added to ensure the fix works as expected.",
+        "template_used": "bug_fix",
+        "strategy": {
+          "code_style": "focused",
+          "completeness": "complete",
+          "includes_comments": true,
+          "includes_tests": true,
+          "description": "Generate complete, focused fix with tests"
+        }
+      },
+      {
+        "filename": "test_src/modules/UserProfileModule.js",
+        "code": "```javascript\nimport React from 'react';\nimport { render, fireEvent, waitFor } from '@testing-library/react';\nimport UserProfileModule from '../modules/UserProfileModule';\n\ndescribe('UserProfileModule', () => {\n  it('should render the upload profile picture button', () => {\n    const { getByText } = render(<UserProfileModule />);\n    expect(getByText('Upload Profile Picture')).toBeInTheDocument();\n  });\n\n  it('should validate file size before upload', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['large file'], 'largefile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 10 * 1024 * 1024; // 10MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    await waitFor(() => {\n      expect(getByText('File size exceeds the maximum limit of 5MB')).toBeInTheDocument();\n    });\n  });\n\n  it('should upload profile picture successfully', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['small file'], 'smallfile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 1 * 1024 * 1024; // 1MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    const saveChangesButton = getByText('Save Changes');\n    fireEvent.click(saveChangesButton);\n\n    await waitFor(() => {\n      expect(console.log).toHaveBeenCalledTimes(1);\n    });\n  });\n\n  it('should display error message for file size above 5MB', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['large file'], 'largefile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 6 * 1024 * 1024; // 6MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    await waitFor(() => {\n      expect(getByText('File size exceeds the maximum limit of 5MB')).toBeInTheDocument();\n    });\n  });\n\n  it('should not display error message for file size below 5MB', async () => {\n    const { getByText, queryByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['small file'], 'smallfile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 4 * 1024 * 1024; // 4MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    await waitFor(() => {\n      expect(queryByText('File size exceeds the maximum limit of 5MB')).not.toBeInTheDocument();\n    });\n  });\n\n  it('should handle empty file input', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    fireEvent.change(fileInput, { target: { files: [] } });\n\n    const saveChangesButton = getByText('Save Changes');\n    fireEvent.click(saveChangesButton);\n\n    await waitFor(() => {\n      expect(console.log).not.toHaveBeenCalled();\n    });\n  });\n\n  it('should handle null file input', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    fireEvent.change(fileInput, { target: { files: null } });\n\n    const saveChangesButton = getByText('Save Changes');\n    fireEvent.click(saveChangesButton);\n\n    await waitFor(() => {\n      expect(console.log).not.toHaveBeenCalled();\n    });\n  });\n});\n```",
+        "raw_response": "filename: test_src/modules/UserProfileModule.js\ncode:\n```javascript\nimport React from 'react';\nimport { render, fireEvent, waitFor } from '@testing-library/react';\nimport UserProfileModule from '../modules/UserProfileModule';\n\ndescribe('UserProfileModule', () => {\n  it('should render the upload profile picture button', () => {\n    const { getByText } = render(<UserProfileModule />);\n    expect(getByText('Upload Profile Picture')).toBeInTheDocument();\n  });\n\n  it('should validate file size before upload', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['large file'], 'largefile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 10 * 1024 * 1024; // 10MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    await waitFor(() => {\n      expect(getByText('File size exceeds the maximum limit of 5MB')).toBeInTheDocument();\n    });\n  });\n\n  it('should upload profile picture successfully', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['small file'], 'smallfile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 1 * 1024 * 1024; // 1MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    const saveChangesButton = getByText('Save Changes');\n    fireEvent.click(saveChangesButton);\n\n    await waitFor(() => {\n      expect(console.log).toHaveBeenCalledTimes(1);\n    });\n  });\n\n  it('should display error message for file size above 5MB', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['large file'], 'largefile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 6 * 1024 * 1024; // 6MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    await waitFor(() => {\n      expect(getByText('File size exceeds the maximum limit of 5MB')).toBeInTheDocument();\n    });\n  });\n\n  it('should not display error message for file size below 5MB', async () => {\n    const { getByText, queryByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    const file = new File(['small file'], 'smallfile.jpg', {\n      type: 'image/jpeg',\n    });\n    file.size = 4 * 1024 * 1024; // 4MB\n\n    fireEvent.change(fileInput, { target: { files: [file] } });\n\n    await waitFor(() => {\n      expect(queryByText('File size exceeds the maximum limit of 5MB')).not.toBeInTheDocument();\n    });\n  });\n\n  it('should handle empty file input', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    fireEvent.change(fileInput, { target: { files: [] } });\n\n    const saveChangesButton = getByText('Save Changes');\n    fireEvent.click(saveChangesButton);\n\n    await waitFor(() => {\n      expect(console.log).not.toHaveBeenCalled();\n    });\n  });\n\n  it('should handle null file input', async () => {\n    const { getByText } = render(<UserProfileModule />);\n    const fileInput = getByText('Upload Profile Picture');\n\n    fireEvent.change(fileInput, { target: { files: null } });\n\n    const saveChangesButton = getByText('Save Changes');\n    fireEvent.click(saveChangesButton);\n\n    await waitFor(() => {\n      expect(console.log).not.toHaveBeenCalled();\n    });\n  });\n});\n```"
+      }
+    ]
+  },
+  "success": true,
+  "dry_run": true
+}
