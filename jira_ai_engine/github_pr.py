@@ -7,33 +7,37 @@ GitHub PR Module - Pull Request Creation
 import os
 import json
 import uuid
-from typing import Dict, List, Any, Optional
-from github import Github, GithubException
+import hashlib
+from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple
+from github import Github, GithubException, InputGitTreeElement
 from dotenv import load_dotenv
 
 load_dotenv()
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 REPO_NAME = os.getenv("REPO_NAME")
-BASE_BRANCH = os.getenv("BASE_BRANCH")
+BASE_BRANCH = os.getenv("BASE_BRANCH", "main")
 
 
 def generate_branch_name(parsed_data: Dict[str, Any], decision: Dict[str, Any]) -> str:
     """
     Generate a meaningful branch name based on the ticket.
-    Format: ai/{ticket-type}/{short-description}
+    Format: ai/{ticket-type}/{short-description}-{timestamp_hash}
+    
+    The timestamp hash ensures uniqueness even for rapid successive PRs.
     """
     ticket_type = decision.get("ticket_type", "task")
-    feature_desc = parsed_data.get("feature", "unknown")[:30]
+    feature_desc = parsed_data.get("feature", parsed_data.get("title", "unknown"))[:40]
     
     # Clean and format the description
-    clean_desc = "".join(c.lower() if c.isalnum() else "-" for c in feature_desc)
-    clean_desc = "-".join(clean_desc.split("-")[:4])  # Limit to 4 words
+    clean_desc = "".join(c.lower() if c.isalnum() or c == ' ' else "-" for c in feature_desc)
+    clean_desc = "-".join(clean_desc.split())[:5]  # Limit to 5 words, split on whitespace
     
-    # Add random suffix to avoid conflicts
-    random_suffix = str(uuid.uuid4())[:6]
+    # Create a short hash from timestamp for uniqueness
+    timestamp_hash = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:8]
     
-    return f"ai/{ticket_type}/{clean_desc}-{random_suffix}"
+    return f"ai/{ticket_type}/{clean_desc}-{timestamp_hash}"
 
 
 def generate_pr_title(parsed_data: Dict[str, Any], decision: Dict[str, Any]) -> str:
@@ -156,147 +160,6 @@ def get_language_from_filename(filename: str) -> str:
     return ''  # No highlight
 
 
-def create_pr(
-    generated_files: List[Dict[str, Any]], 
-    parsed_data: Dict[str, Any], 
-    decision: Dict[str, Any]
-) -> Dict[str, Any]:
-    """
-    Create a GitHub PR with the generated code.
-    
-    Args:
-        generated_files: List of generated file information
-        parsed_data: Parsed ticket data
-        decision: Decision object from decision module
-    
-    Returns:
-        Dictionary with PR creation results
-    """
-    try:
-        g = Github(GITHUB_TOKEN)
-        repo = g.get_repo(REPO_NAME)
-        
-        # Generate branch name
-        branch_name = generate_branch_name(parsed_data, decision)
-        
-        # Get base branch reference
-        try:
-            base_branch = repo.get_branch(BASE_BRANCH)
-        except GithubException:
-            # Fallback to default branch if specified branch doesn't exist
-            try:
-                base_branch = repo.get_branch("main")
-            except GithubException:
-                base_branch = repo.get_branch("master")
-        
-        # Create new branch
-        try:
-            repo.create_git_ref(
-                ref=f"refs/heads/{branch_name}",
-                sha=base_branch.commit.sha
-            )
-            print(f"✅ Created branch: {branch_name}")
-        except GithubException as e:
-            if "Reference already exists" in str(e):
-                print(f"⚠️ Branch {branch_name} already exists, using existing branch")
-            else:
-                raise
-        
-        # Upload generated files
-        uploaded_files = []
-        for file_info in generated_files:
-            filename = file_info.get("filename", "")
-            code = file_info.get("code", "")
-            
-            if not filename or not code:
-                print(f"⚠️ Skipping file with missing filename or code")
-                continue
-            
-            try:
-                # Check if file exists
-                try:
-                    contents = repo.get_contents(filename, ref=branch_name)
-                    # Update existing file
-                    repo.update_file(
-                        path=filename,
-                        message=f"AI: Update {filename}",
-                        content=code,
-                        sha=contents.sha,
-                        branch=branch_name
-                    )
-                    print(f"✅ Updated: {filename}")
-                except GithubException:
-                    # File doesn't exist, create it
-                    repo.create_file(
-                        path=filename,
-                        message=f"AI: Add {filename}",
-                        content=code,
-                        branch=branch_name
-                    )
-                    print(f"✅ Created: {filename}")
-                
-                uploaded_files.append(filename)
-                
-            except Exception as e:
-                print(f"❌ Error uploading {filename}: {str(e)}")
-        
-        if not uploaded_files:
-            return {
-                "success": False,
-                "error": "No files were uploaded",
-                "branch": branch_name
-            }
-        
-        # Generate PR title and body
-        pr_title = generate_pr_title(parsed_data, decision)
-        pr_body = generate_pr_body(parsed_data, decision, generated_files)
-        
-        # Create pull request
-        try:
-            pr = repo.create_pull(
-                title=pr_title,
-                body=pr_body,
-                head=branch_name,
-                base=BASE_BRANCH
-            )
-            
-            print(f"✅ PR Created Successfully!")
-            print(f"🔗 PR URL: {pr.html_url}")
-            print(f"📋 PR Number: #{pr.number}")
-            
-            # Add labels based on ticket type
-            ticket_type = decision.get("ticket_type", "task")
-            try:
-                pr.add_to_labels(f"ai-generated", f"{ticket_type}")
-            except:
-                pass  # Labels might not exist
-            
-            return {
-                "success": True,
-                "pr_number": pr.number,
-                "pr_url": pr.html_url,
-                "branch": branch_name,
-                "files_uploaded": uploaded_files,
-                "title": pr_title
-            }
-            
-        except GithubException as e:
-            print(f"❌ Error creating PR: {str(e)}")
-            return {
-                "success": False,
-                "error": str(e),
-                "branch": branch_name,
-                "files_uploaded": uploaded_files
-            }
-            
-    except Exception as e:
-        print(f"❌ GitHub PR creation failed: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-
 def create_pr_from_single_file(code_output: str) -> Dict[str, Any]:
     """
     Legacy function for backward compatibility.
@@ -376,3 +239,528 @@ def get_repo_info() -> Dict[str, Any]:
         return {
             "error": str(e)
         }
+
+
+def generate_commit_message(
+    parsed_data: Dict[str, Any], 
+    decision: Dict[str, Any], 
+    uploaded_files: List[str]
+) -> str:
+    """
+    Generate a conventional commit-style message for the PR.
+    
+    Format: type(scope): description
+    
+    Types: feat, fix, refactor, docs, test, chore
+    """
+    ticket_type = decision.get("ticket_type", "task")
+    action = decision.get("action", "general")
+    
+    # Map ticket types to commit types
+    commit_type_map = {
+        "bug": "fix",
+        "feature": "feat",
+        "refactor": "refactor",
+        "task": "chore"
+    }
+    
+    commit_type = commit_type_map.get(ticket_type, "chore")
+    
+    # Determine scope from components
+    components = parsed_data.get("components", [])
+    scope = components[0].lower().replace(" ", "-") if components else "general"
+    
+    # Create description from title or feature
+    description = parsed_data.get("title", parsed_data.get("feature", "AI generated change"))[:72]
+    
+    # Build commit message
+    commit_msg = f"{commit_type}({scope}): {description}\n\n"
+    commit_msg += f"AI-generated change based on Jira ticket analysis.\n\n"
+    commit_msg += f"Files changed: {len(uploaded_files)}\n"
+    for f in uploaded_files[:5]:  # List up to 5 files
+        commit_msg += f"  - {f}\n"
+    
+    if len(uploaded_files) > 5:
+        commit_msg += f"  ... and {len(uploaded_files) - 5} more files\n"
+    
+    return commit_msg
+
+
+def create_atomic_commit(
+    repo: Any,
+    branch_name: str,
+    base_sha: str,
+    files: List[Tuple[str, str]]
+) -> str:
+    """
+    Create a single atomic commit with all files.
+    
+    This is more efficient than individual file uploads and ensures
+    all changes are committed together.
+    
+    Args:
+        repo: GitHub repository object
+        branch_name: Name of the branch to commit to
+        base_sha: SHA of the base commit
+        files: List of (filename, content) tuples
+        
+    Returns:
+        SHA of the new commit
+    """
+    # Get the base tree
+    base_tree = repo.get_git_tree(base_sha).sha
+    
+    # Create blobs for all files
+    blob_shas = []
+    for filename, content in files:
+        blob = repo.create_git_blob(content, "utf-8")
+        blob_shas.append((filename, blob.sha))
+    
+    # Create new tree with all files
+    tree_items = []
+    for filename, blob_sha in blob_shas:
+        tree_items.append(
+            InputGitTreeElement(
+                path=filename,
+                mode="100644",  # Regular file
+                type="blob",
+                sha=blob_sha
+            )
+        )
+    
+    new_tree = repo.create_git_tree(tree_items, base_tree=base_tree)
+    
+    # Create commit
+    parent = repo.get_git_commit(base_sha)
+    message = f"AI: Generate code from Jira ticket\n\nGenerated {len(files)} file(s)"
+    new_commit = repo.create_git_commit(
+        message=message,
+        tree=new_tree,
+        parents=[parent]
+    )
+    
+    # Update branch reference
+    ref = repo.get_git_ref(f"heads/{branch_name}")
+    ref.edit(sha=new_commit.sha)
+    
+    return new_commit.sha
+
+
+def check_existing_pr(
+    repo: Any,
+    branch_name: str,
+    base_branch: str
+) -> Optional[Any]:
+    """
+    Check if a PR already exists for this branch.
+    
+    Returns:
+        PullRequest object if exists, None otherwise
+    """
+    try:
+        pulls = repo.get_pulls(state="open", head=branch_name, base=base_branch)
+        if pulls.totalCount > 0:
+            return pulls[0]
+    except Exception:
+        pass
+    return None
+
+
+def add_pr_reviewers(
+    pr: Any,
+    reviewers: List[str]
+) -> Dict[str, Any]:
+    """
+    Request reviews from specified users.
+    
+    Returns:
+        Dictionary with results of reviewer requests
+    """
+    results = {"requested": [], "failed": []}
+    
+    for reviewer in reviewers:
+        try:
+            pr.create_review_request(reviewer=reviewer)
+            results["requested"].append(reviewer)
+        except GithubException as e:
+            results["failed"].append({"user": reviewer, "error": str(e)})
+    
+    return results
+
+
+def add_pr_comments(
+    pr: Any,
+    files_to_change: List[Dict[str, Any]],
+    decision: Dict[str, Any]
+) -> None:
+    """
+    Add inline comments to specific files in the PR.
+    """
+    try:
+        # Get the PR diff and add comments to relevant sections
+        strategy = decision.get("code_generation_strategy", {})
+        
+        comment = (
+            "🤖 **AI Note:** This file was generated by AI. "
+            "Please review carefully for:\n"
+            f"- Template used: {strategy.get('template', 'standard')}\n"
+            f"- Includes comments: {strategy.get('includes_comments', False)}\n"
+            f"- Completeness: {strategy.get('completeness', 'scaffold')}\n\n"
+            "Focus on verifying the implementation matches the requirements."
+        )
+        
+        # Add comment to the first file
+        if files_to_change:
+            # We can't easily add inline comments without knowing line numbers
+            # So we'll add a general comment
+            pr.create_issue_comment(
+                f"## 📝 AI Generation Notes\n\n{comment}"
+            )
+    except Exception as e:
+        print(f"⚠️ Could not add PR comments: {str(e)}")
+
+
+def create_pr(
+    generated_files: List[Dict[str, Any]], 
+    parsed_data: Dict[str, Any], 
+    decision: Dict[str, Any],
+    options: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Create a GitHub PR with the generated code.
+    
+    Enhanced version with atomic commits, better error handling,
+    and configurable options.
+    
+    Args:
+        generated_files: List of generated file information
+        parsed_data: Parsed ticket data
+        decision: Decision object from decision module
+        options: Optional configuration (reviewers, labels, etc.)
+    
+    Returns:
+        Dictionary with PR creation results
+    """
+    options = options or {}
+    results = {
+        "success": False,
+        "stage": "initialization",
+        "details": {}
+    }
+    
+    try:
+        # Validate inputs
+        if not generated_files:
+            return {
+                "success": False,
+                "error": "No generated files provided",
+                "stage": "validation"
+            }
+        
+        # Initialize GitHub connection
+        results["stage"] = "github_connection"
+        g = Github(GITHUB_TOKEN)
+        repo = g.get_repo(REPO_NAME)
+        results["details"]["repo"] = repo.full_name
+        
+        # Get base branch reference
+        results["stage"] = "get_base_branch"
+        try:
+            base_branch = repo.get_branch(BASE_BRANCH)
+        except GithubException:
+            # Fallback chain for base branch
+            for fallback in ["main", "master", "develop"]:
+                try:
+                    base_branch = repo.get_branch(fallback)
+                    break
+                except GithubException:
+                    continue
+            else:
+                return {
+                    "success": False,
+                    "error": "Could not find a valid base branch",
+                    "stage": "get_base_branch"
+                }
+        
+        results["details"]["base_branch"] = base_branch.name
+        results["details"]["base_sha"] = base_branch.commit.sha
+        
+        # Generate branch name
+        results["stage"] = "generate_branch_name"
+        branch_name = generate_branch_name(parsed_data, decision)
+        results["details"]["branch_name"] = branch_name
+        
+        # Check if branch already exists
+        try:
+            existing_branch = repo.get_branch(branch_name)
+            print(f"⚠️ Branch {branch_name} already exists")
+            
+            # Option to delete and recreate
+            if options.get("force_recreate", False):
+                try:
+                    ref = repo.get_git_ref(f"heads/{branch_name}")
+                    ref.delete()
+                    print(f"✅ Deleted existing branch: {branch_name}")
+                except GithubException as e:
+                    print(f"⚠️ Could not delete existing branch: {str(e)}")
+        except GithubException:
+            # Branch doesn't exist, which is what we want
+            pass
+        
+        # Create new branch
+        results["stage"] = "create_branch"
+        try:
+            repo.create_git_ref(
+                ref=f"refs/heads/{branch_name}",
+                sha=base_branch.commit.sha
+            )
+            print(f"✅ Created branch: {branch_name}")
+        except GithubException as e:
+            if "Reference already exists" in str(e):
+                print(f"⚠️ Branch {branch_name} already exists, proceeding with it")
+            else:
+                raise
+        
+        # Prepare files for commit
+        results["stage"] = "prepare_files"
+        files_to_commit = []
+        uploaded_files = []
+        skipped_files = []
+        
+        for file_info in generated_files:
+            filename = file_info.get("filename", "")
+            code = file_info.get("code", "")
+            
+            if not filename or not code:
+                skipped_files.append({"filename": filename, "reason": "missing filename or code"})
+                continue
+            
+            # Validate filename (no path traversal)
+            if ".." in filename or filename.startswith("/"):
+                skipped_files.append({"filename": filename, "reason": "invalid filename"})
+                continue
+            
+            files_to_commit.append((filename, code))
+            uploaded_files.append(filename)
+        
+        results["details"]["files_uploaded"] = uploaded_files
+        results["details"]["files_skipped"] = skipped_files
+        
+        if not files_to_commit:
+            return {
+                "success": False,
+                "error": "No valid files to commit",
+                "stage": "prepare_files",
+                "details": results["details"]
+            }
+        
+        # Create atomic commit with all files
+        results["stage"] = "create_commit"
+        try:
+            commit_sha = create_atomic_commit(
+                repo=repo,
+                branch_name=branch_name,
+                base_sha=base_branch.commit.sha,
+                files=files_to_commit
+            )
+            print(f"✅ Created atomic commit: {commit_sha[:7]}")
+            results["details"]["commit_sha"] = commit_sha
+        except GithubException as e:
+            # Fallback to individual file uploads
+            print(f"⚠️ Atomic commit failed, falling back to individual uploads: {str(e)}")
+            
+            for filename, code in files_to_commit:
+                try:
+                    # Check if file exists
+                    try:
+                        contents = repo.get_contents(filename, ref=branch_name)
+                        repo.update_file(
+                            path=filename,
+                            message=f"AI: Update {filename}",
+                            content=code,
+                            sha=contents.sha,
+                            branch=branch_name
+                        )
+                        print(f"✅ Updated: {filename}")
+                    except GithubException:
+                        repo.create_file(
+                            path=filename,
+                            message=f"AI: Add {filename}",
+                            content=code,
+                            branch=branch_name
+                        )
+                        print(f"✅ Created: {filename}")
+                except Exception as e:
+                    print(f"❌ Error uploading {filename}: {str(e)}")
+        
+        # Check for existing PR
+        results["stage"] = "check_existing_pr"
+        existing_pr = check_existing_pr(repo, branch_name, BASE_BRANCH)
+        
+        if existing_pr:
+            print(f"⚠️ PR already exists: #{existing_pr.number}")
+            return {
+                "success": True,
+                "pr_number": existing_pr.number,
+                "pr_url": existing_pr.html_url,
+                "branch": branch_name,
+                "files_uploaded": uploaded_files,
+                "existing": True,
+                "details": results["details"]
+            }
+        
+        # Generate PR title and body
+        results["stage"] = "generate_pr_content"
+        pr_title = generate_pr_title(parsed_data, decision)
+        pr_body = generate_pr_body(parsed_data, decision, generated_files)
+        
+        # Create pull request
+        results["stage"] = "create_pr"
+        try:
+            pr = repo.create_pull(
+                title=pr_title,
+                body=pr_body,
+                head=branch_name,
+                base=BASE_BRANCH
+            )
+            
+            print(f"✅ PR Created Successfully!")
+            print(f"🔗 PR URL: {pr.html_url}")
+            print(f"📋 PR Number: #{pr.number}")
+            
+            results["success"] = True
+            results["pr_number"] = pr.number
+            results["pr_url"] = pr.html_url
+            results["branch"] = branch_name
+            results["title"] = pr_title
+            
+            # Add labels
+            results["stage"] = "add_labels"
+            ticket_type = decision.get("ticket_type", "task")
+            labels_to_add = ["ai-generated", ticket_type]
+            
+            # Add custom labels from options
+            if "labels" in options:
+                labels_to_add.extend(options["labels"])
+            
+            try:
+                pr.add_to_labels(*labels_to_add)
+                print(f"✅ Added labels: {', '.join(labels_to_add)}")
+                results["details"]["labels"] = labels_to_add
+            except GithubException as e:
+                print(f"⚠️ Could not add some labels: {str(e)}")
+                results["details"]["labels_failed"] = str(e)
+            
+            # Add reviewers if specified
+            if "reviewers" in options:
+                results["stage"] = "add_reviewers"
+                reviewer_results = add_pr_reviewers(pr, options["reviewers"])
+                results["details"]["reviewers"] = reviewer_results
+                
+                if reviewer_results["requested"]:
+                    print(f"✅ Requested reviews from: {', '.join(reviewer_results['requested'])}")
+            
+            # Add PR comments
+            if options.get("add_comments", True):
+                results["stage"] = "add_comments"
+                add_pr_comments(pr, generated_files, decision)
+            
+            # Add milestone if specified
+            if "milestone" in options:
+                try:
+                    milestone = repo.get_milestone(number=options["milestone"])
+                    pr.set_milestone(milestone)
+                    print(f"✅ Added to milestone: {milestone.title}")
+                except GithubException:
+                    print(f"⚠️ Could not add to milestone")
+            
+        except GithubException as e:
+            error_msg = str(e)
+            print(f"❌ Error creating PR: {error_msg}")
+            results["error"] = error_msg
+            results["stage"] = "create_pr"
+            
+            # Check for specific errors
+            if "No commits between" in error_msg:
+                results["error_detail"] = "No changes detected. The generated files may be identical to existing files."
+            elif "A pull request already exists" in error_msg:
+                results["error_detail"] = "A PR for this branch already exists."
+            
+            return results
+            
+    except GithubException as e:
+        error_msg = f"GitHub API Error: {str(e)}"
+        print(f"❌ {error_msg}")
+        results["error"] = error_msg
+        results["stage"] = "github_api"
+        return results
+        
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        print(f"❌ {error_msg}")
+        results["error"] = error_msg
+        results["stage"] = "unexpected"
+        return results
+    
+    return results
+
+
+def create_pr_from_single_file(code_output: str) -> Dict[str, Any]:
+    """
+    Legacy function for backward compatibility.
+    Parses simple code output format and creates PR.
+    """
+    lines = code_output.split("\n")
+    
+    # Parse filename and code
+    file_name = ""
+    code_lines = []
+    found_code = False
+    
+    for line in lines:
+        if line.lower().startswith("filename:"):
+            file_name = line.replace("filename:", "").strip()
+        elif line.lower().startswith("code:"):
+            found_code = True
+        elif found_code:
+            code_lines.append(line)
+    
+    code = "\n".join(code_lines).strip()
+    
+    # Create minimal parsed_data and decision for compatibility
+    parsed_data = {
+        "feature": "Legacy PR creation",
+        "intent": "Backward compatibility mode",
+        "acceptance_criteria": []
+    }
+    
+    decision = {
+        "ticket_type": "task",
+        "action": "general",
+        "approach": "standard",
+        "priority": {"adjusted": "medium"},
+        "smallest_change": {"recommendation": "N/A"},
+        "code_generation_strategy": {"includes_comments": False},
+        "requires_tests": False
+    }
+    
+    generated_files = [{
+        "filename": file_name,
+        "code": code,
+        "template_used": "legacy"
+    }]
+    
+    return create_pr(generated_files, parsed_data, decision)
+
+
+def validate_github_connection() -> bool:
+    """Validate that GitHub connection is working."""
+    try:
+        g = Github(GITHUB_TOKEN)
+        repo = g.get_repo(REPO_NAME)
+        # Try to get the base branch
+        repo.get_branch(BASE_BRANCH)
+        return True
+    except Exception as e:
+        print(f"❌ GitHub connection validation failed: {str(e)}")
+        return False

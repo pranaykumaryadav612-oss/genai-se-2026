@@ -161,21 +161,18 @@ def interactive_mode():
     print("=" * 60)
     print()
     
-    print("Enter your Jira ticket text (press Enter twice to finish):")
+    print("Enter your Jira ticket text (press Enter on an empty line to finish):")
     print("-" * 50)
     
     lines = []
-    empty_line_count = 0
     
     while True:
         try:
             line = input()
             if line.strip() == "":
-                empty_line_count += 1
-                if empty_line_count >= 2:
-                    break
+                # Empty line signals end of input
+                break
             else:
-                empty_line_count = 0
                 lines.append(line)
         except EOFError:
             break
