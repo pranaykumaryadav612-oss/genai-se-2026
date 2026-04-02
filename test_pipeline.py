@@ -45,13 +45,25 @@ def main():
     print(SAMPLE_TICKET)
     print("\n" + "=" * 70)
     
-    # Run pipeline in dry-run mode (won't create actual PR)
-    print("\n🚀 Running pipeline in dry-run mode...\n")
+    # Ask user if they want to create actual PR
+    print("\n" + "=" * 70)
+    choice = input("\n🔥 Create actual PR on GitHub? (y/n, default: n): ").strip().lower()
+    dry_run = choice != 'y'
+    
+    if dry_run:
+        print("\n🚀 Running pipeline in DRY-RUN mode (no PR will be created)...\n")
+    else:
+        print("\n🚀 Running pipeline in LIVE mode (WILL create PR on GitHub)...\n")
+        print("⚠️  WARNING: This will create a real branch and PR on GitHub!")
+        confirm = input("Are you sure? (yes to confirm): ").strip().lower()
+        if confirm != 'yes':
+            print("Aborted. Run again to create PR.")
+            return None
     
     results = run_pipeline(
         ticket_text=SAMPLE_TICKET,
         project_context=PROJECT_CONTEXT,
-        dry_run=True
+        dry_run=dry_run
     )
     
     # Print summary
